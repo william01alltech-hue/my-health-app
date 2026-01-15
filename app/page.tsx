@@ -13,8 +13,8 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3
 // 2. Gemini AI 金鑰
 const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
 
-// 3. AI 模型型號 (改用 Pro 版，相容性最高)
-const AI_MODEL = "gemini-1.5-pro"; 
+// 3. AI 模型型號 (根據您的 JSON 清單，改用最新的 2.5 Flash 版)
+const AI_MODEL = "gemini-2.5-flash"; 
 
 // === 雲端上傳功能 ===
 const uploadToCloud = async (data: any) => {
@@ -31,13 +31,13 @@ const uploadToCloud = async (data: any) => {
   }
 };
 
-// === Gemini AI 分析功能 (V3.0 Pro版) ===
+// === Gemini AI 分析功能 (V4.0 - 針對您的帳號優化版) ===
 const analyzeWithGemini = async (base64Image: string) => {
   try {
     // 移除 Base64 的檔頭
     const cleanBase64 = base64Image.split(',')[1];
     
-    // 組合成正確的 API 網址
+    // 組合成正確的 API 網址 (使用 gemini-2.5-flash)
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
     const payload = {
@@ -59,7 +59,7 @@ const analyzeWithGemini = async (base64Image: string) => {
 
     // 🚨 錯誤捕捉
     if (data.error) {
-      alert(`❌ AI 分析失敗 (${data.error.code})：\n${data.error.message}\n\n請截圖此畫面給工程師。`);
+      alert(`❌ AI 分析失敗 (${data.error.code})：\n${data.error.message}\n\n請確認網路連線正常。`);
       return `錯誤：${data.error.message}`;
     }
 
@@ -254,7 +254,7 @@ export default function HealthApp() {
           2026 健康管理 <Cloud size={16} className="opacity-80"/>
         </h1>
         <p className="text-xs opacity-90 flex items-center justify-center gap-1">
-          <BrainCircuit size={12}/> AI 營養師 (Pro版)
+          <BrainCircuit size={12}/> AI 營養師 (V2.5 啟用)
         </p>
         <button onClick={clearAll} className="absolute right-4 top-4 opacity-50 hover:opacity-100">
           <Trash2 size={18} />
@@ -267,7 +267,7 @@ export default function HealthApp() {
           {analyzing ? (
             <>
               <Loader2 className="animate-spin text-blue-600" size={24} />
-              <span className="font-bold text-slate-700">AI 正在深度分析...</span>
+              <span className="font-bold text-slate-700">Gemini 2.5 思考中...</span>
             </>
           ) : (
             <>
