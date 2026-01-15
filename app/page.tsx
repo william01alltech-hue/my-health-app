@@ -2,14 +2,23 @@
 /* eslint-disable */
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2, Flame, ClipboardList } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2, Flame, ClipboardList, Activity, Dumbbell } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 // === 設定區 ===
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
-// 請確認這裡填入的是您剛剛新申請的那把有效金鑰
+
+// ⚠️⚠️⚠️ 請在此填入您的新 API 金鑰 (不要留空，也不要用舊的) ⚠️⚠️⚠️
 const GEMINI_API_KEY = "AIzaSyA0_eNpZC6Ujvmbs6GJAg_HV8jaJp6o6uU"; 
 const AI_MODEL = "gemini-2.5-flash"; 
+
+// === 運動消耗標準 (每單位消耗卡路里) ===
+const ACTIVITY_STANDARDS = [
+  { id: 'walk', name: '走路', unit: '步', kcal: 0.04, defaultTarget: 6000 },
+  { id: 'run', name: '跑步', unit: '公里', kcal: 60, defaultTarget: 5 },
+  { id: 'pushup', name: '伏地挺身', unit: '次', kcal: 0.4, defaultTarget: 30 },
+  { id: 'crunch', name: '捲腹', unit: '次', kcal: 0.3, defaultTarget: 30 },
+];
 
 // === 雲端上傳 ===
 const uploadToCloud = async (data: any) => {
@@ -71,10 +80,11 @@ export default function HealthApp() {
   
   // 資料狀態
   const [weightData, setWeightData] = useState<{date: string, weight: number}[]>([]); 
-  const [dietData, setDietData] = useState<Record<string, Record<string, string[]>>>({}); // 存照片
-  
-  // 新增：詳細食物紀錄 { "2026-01-15": { "早餐": [{name: "蛋餅", cal: 300}, ...] } }
+  const [dietData, setDietData] = useState<Record<string, Record<string, string[]>>>({});
   const [foodLog, setFoodLog] = useState<Record<string, Record<string, {name: string, cal: number}[]>>>({});
+  
+  // 新增：運動紀錄 { "2026-01-15": { walk: {target: 6000, actual: 5000}, ... } }
+  const [activityData, setActivityData] = useState<Record<string, Record<string, {target: number, actual: number}>>>({});
 
   const [weightVal, setWeightVal] = useState('');
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 6)));
@@ -89,11 +99,13 @@ export default function HealthApp() {
   useEffect(() => {
     const savedWeight = localStorage.getItem('Health_Weight_Final');
     const savedDiet = localStorage.getItem('Health_Diet_Final');
-    const savedLog = localStorage.getItem('Health_FoodLog_V5'); // 使用新 Key 避免衝突
+    const savedLog = localStorage.getItem('Health_FoodLog_V5');
+    const savedActivity = localStorage.getItem('Health_Activity_V1');
     
     if (savedWeight) setWeightData(JSON.parse(savedWeight));
     if (savedDiet) setDietData(JSON.parse(savedDiet));
     if (savedLog) setFoodLog(JSON.parse(savedLog));
+    if (savedActivity) setActivityData(JSON.parse(savedActivity));
     setIsInitialized(true);
   }, []);
 
@@ -102,8 +114,9 @@ export default function HealthApp() {
       localStorage.setItem('Health_Weight_Final', JSON.stringify(weightData));
       localStorage.setItem('Health_Diet_Final', JSON.stringify(dietData));
       localStorage.setItem('Health_FoodLog_V5', JSON.stringify(foodLog));
+      localStorage.setItem('Health_Activity_V1', JSON.stringify(activityData));
     }
-  }, [weightData, dietData, foodLog, isInitialized]);
+  }, [weightData, dietData, foodLog, activityData, isInitialized]);
 
   const todayKey = new Date().toISOString().split('T')[0];
 
@@ -151,6 +164,22 @@ export default function HealthApp() {
     setStartDate(newDate);
   };
 
+  // 運動輸入處理
+  const handleActivityChange = (id: string, field: 'target' | 'actual', value: string) => {
+    const num = parseFloat(value) || 0;
+    setActivityData(prev => {
+      const today = prev[todayKey] || {};
+      const current = today[id] || { target: ACTIVITY_STANDARDS.find(a=>a.id===id)?.defaultTarget || 0, actual: 0 };
+      return {
+        ...prev,
+        [todayKey]: {
+          ...today,
+          [id]: { ...current, [field]: num }
+        }
+      };
+    });
+  };
+
   const handleCameraClick = (category: string) => {
     if ((dietData[todayKey]?.[category] || []).length >= MEAL_LIMITS[category]) {
       alert("照片數量已達上限");
@@ -180,19 +209,16 @@ export default function HealthApp() {
           
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
 
-          // 1. 存照片
           setDietData(prev => {
             const dayRecord = prev[todayKey] || {};
             const categoryImages = dayRecord[currentCategory] || [];
             return { ...prev, [todayKey]: { ...dayRecord, [currentCategory]: [...categoryImages, compressedBase64] } };
           });
 
-          // 2. AI 分析
           const result = await analyzeWithGemini(compressedBase64);
           setAnalyzing(false);
           setAiResult(result);
 
-          // 3. 存入詳細食物紀錄 (方便表格顯示)
           if (result.calories >= 0) {
             setFoodLog(prev => {
                 const dayLog = prev[todayKey] || {};
@@ -216,16 +242,12 @@ export default function HealthApp() {
 
   const removePhoto = (category: string, index: number) => {
     if(!confirm('確定刪除這張照片與對應的熱量紀錄嗎？')) return;
-    
-    // 刪照片
     setDietData(prev => {
       const dayRecord = prev[todayKey];
       const newImages = [...dayRecord[category]];
       newImages.splice(index, 1);
       return { ...prev, [todayKey]: { ...dayRecord, [category]: newImages } };
     });
-
-    // 刪熱量紀錄 (同步索引)
     setFoodLog(prev => {
         const dayLog = prev[todayKey];
         if(!dayLog || !dayLog[category]) return prev;
@@ -237,7 +259,7 @@ export default function HealthApp() {
 
   const clearAll = () => {
     if(confirm('確定清空所有資料？')) {
-      setWeightData([]); setDietData({}); setFoodLog({});
+      setWeightData([]); setDietData({}); setFoodLog({}); setActivityData({});
     }
   };
 
@@ -247,7 +269,6 @@ export default function HealthApp() {
     const rows = [];
     const totals = { '早餐': 0, '午餐': 0, '晚餐': 0, '其他': 0 };
 
-    // 產生 1~10 行
     for (let i = 0; i < 10; i++) {
         const rowData = {};
         CATEGORIES.forEach(cat => {
@@ -261,12 +282,25 @@ export default function HealthApp() {
         });
         rows.push({ index: i + 1, ...rowData });
     }
-    
     const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
     return { rows, totals, grandTotal };
   };
 
+  // 計算運動資料
+  const getActivityStats = () => {
+    const todayActs = activityData[todayKey] || {};
+    let totalBurn = 0;
+    const stats = ACTIVITY_STANDARDS.map(act => {
+        const record = todayActs[act.id] || { target: act.defaultTarget, actual: 0 };
+        const burn = Math.round(record.actual * act.kcal);
+        totalBurn += burn;
+        return { ...act, ...record, burn };
+    });
+    return { stats, totalBurn };
+  };
+
   const { rows, totals, grandTotal } = getTableData();
+  const { stats, totalBurn } = getActivityStats();
 
   if (!isInitialized) return <div className="p-10 text-center">Loading...</div>;
 
@@ -279,12 +313,28 @@ export default function HealthApp() {
         <h1 className="text-lg font-bold flex items-center justify-center gap-2">
           2026 健康管理 <Cloud size={16} className="opacity-80"/>
         </h1>
-        <div className="mt-4 text-center">
-          <p className="text-blue-100 text-sm mb-1">今日總攝取</p>
-          <div className="text-4xl font-black flex items-center justify-center gap-2">
-            <Flame className="text-orange-400 fill-orange-400" size={32} />
-            {grandTotal} 
-            <span className="text-lg font-normal opacity-80">kcal</span>
+        <div className="mt-4 flex justify-around items-end">
+          <div className="text-center">
+            <p className="text-blue-100 text-xs mb-1">攝取</p>
+            <div className="text-2xl font-black flex items-center justify-center gap-1">
+              <Flame className="text-orange-400 fill-orange-400" size={20} />
+              {grandTotal}
+            </div>
+          </div>
+          <div className="text-center pb-1 text-xl font-bold opacity-50">-</div>
+          <div className="text-center">
+            <p className="text-blue-100 text-xs mb-1">消耗</p>
+            <div className="text-2xl font-black flex items-center justify-center gap-1">
+              <Activity className="text-green-300" size={20} />
+              {totalBurn}
+            </div>
+          </div>
+          <div className="text-center pb-1 text-xl font-bold opacity-50">=</div>
+          <div className="text-center">
+            <p className="text-blue-100 text-xs mb-1">淨值</p>
+            <div className="text-3xl font-black text-yellow-300">
+              {grandTotal - totalBurn}
+            </div>
           </div>
         </div>
         <button onClick={clearAll} className="absolute right-4 top-4 opacity-50 hover:opacity-100"><Trash2 size={18}/></button>
@@ -322,7 +372,7 @@ export default function HealthApp() {
             </div>
             <button onClick={() => shift(7)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500"><ChevronRight size={20} /></button>
           </div>
-          <div className="h-[200px] w-full">
+          <div className="h-[150px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
@@ -338,6 +388,47 @@ export default function HealthApp() {
             <input type="number" step="0.1" value={weightVal} onChange={(e) => setWeightVal(e.target.value)} placeholder="輸入體重" className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded-xl text-lg"/>
             <button onClick={addWeight} className="bg-blue-600 text-white px-4 rounded-xl shadow"><Plus size={24} /></button>
           </div>
+        </section>
+
+        {/* 🆕 一日活動表格 (可輸入) */}
+        <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50">
+            <div className="flex items-center gap-2 mb-4">
+                <Dumbbell className="text-green-600" size={20} />
+                <h2 className="font-bold text-slate-700">一日活動 ({todayKey})</h2>
+            </div>
+            
+            <div className="overflow-x-auto rounded-lg border border-slate-300">
+                <table className="w-full text-center text-sm border-collapse">
+                    <thead>
+                        <tr className="bg-green-50 border-b border-slate-300 font-bold text-slate-700">
+                            <th className="p-2 border-r border-slate-300 w-20">項目</th>
+                            <th className="p-2 border-r border-slate-300">目標</th>
+                            <th className="p-2 border-r border-slate-300">實際</th>
+                            <th className="p-2 border-r border-slate-300 w-12">單位</th>
+                            <th className="p-2">卡路里</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {stats.map((act) => (
+                            <tr key={act.id} className="border-b border-slate-200">
+                                <td className="p-2 border-r border-slate-300 font-bold text-slate-700">{act.name}</td>
+                                <td className="p-1 border-r border-slate-300">
+                                    <input type="number" value={act.target} onChange={(e) => handleActivityChange(act.id, 'target', e.target.value)} className="w-full text-center bg-transparent outline-none text-slate-400" />
+                                </td>
+                                <td className="p-1 border-r border-slate-300">
+                                    <input type="number" value={act.actual || ''} onChange={(e) => handleActivityChange(act.id, 'actual', e.target.value)} className="w-full text-center bg-blue-50 rounded py-1 font-bold text-blue-600 outline-none focus:ring-1 focus:ring-blue-400" placeholder="0" />
+                                </td>
+                                <td className="p-2 border-r border-slate-300 text-xs text-slate-500">{act.unit}</td>
+                                <td className="p-2 font-mono text-orange-600">{act.burn > 0 ? act.burn : '-'}</td>
+                            </tr>
+                        ))}
+                        <tr className="bg-green-600 text-white font-bold">
+                            <td colSpan={4} className="p-2 text-right pr-4">運動消耗總計</td>
+                            <td className="p-2 text-center text-lg">{totalBurn}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         {/* 飲食照片列表 */}
@@ -375,7 +466,7 @@ export default function HealthApp() {
           </div>
         </section>
 
-        {/* 🆕 卡路里計算總表 (復刻您圖片中的表格) */}
+        {/* 卡路里計算總表 */}
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50 mb-8">
             <div className="flex items-center gap-2 mb-4">
                 <ClipboardList className="text-blue-600" size={20} />
@@ -409,7 +500,6 @@ export default function HealthApp() {
                                 ))}
                             </tr>
                         ))}
-                        {/* 合計 Row */}
                         <tr className="bg-blue-50 border-b border-slate-300 font-bold text-blue-800">
                             <td className="p-2 border-r border-slate-300">合計</td>
                             {CATEGORIES.map(cat => (
@@ -418,7 +508,6 @@ export default function HealthApp() {
                                 </td>
                             ))}
                         </tr>
-                        {/* 總計 Row */}
                         <tr className="bg-blue-600 text-white font-bold">
                             <td className="p-2 border-r border-blue-500">總計</td>
                             <td colSpan={4} className="p-2 text-center text-lg">
