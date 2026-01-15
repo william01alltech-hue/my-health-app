@@ -2,17 +2,18 @@
 /* eslint-disable */
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2, Flame, ClipboardList, Activity, Dumbbell, Droplets } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2, Flame, ClipboardList, Activity, Dumbbell, Droplets, ImageUp } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 // === 設定區 ===
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
 
-// ⚠️⚠️⚠️【重要】請填入您的新 API 金鑰 (AIzaSy...) ⚠️⚠️⚠️
+// ⚠️⚠️⚠️【重要】已填入您的新 API 金鑰 ⚠️⚠️⚠️
 const GEMINI_API_KEY = "AIzaSyA0_eNpZC6Ujvmbs6GJAg_HV8jaJp6o6uU"; 
 const AI_MODEL = "gemini-2.5-flash"; 
 
 // === 運動消耗標準 ===
+// allowScan: true 代表該項目可以上傳圖片 (走路、跑步)
 const ACTIVITY_STANDARDS = [
   { id: 'walk', name: '走路', unit: '步', kcal: 0.04, defaultTarget: 6000, allowScan: true },
   { id: 'run', name: '跑步', unit: '公里', kcal: 60, defaultTarget: 5, allowScan: true },
@@ -36,22 +37,25 @@ const uploadToCloud = async (data: any) => {
   } catch (err) { console.error("雲端備份失敗:", err); }
 };
 
-// === Gemini AI 分析 (多功能版) ===
-const analyzeWithGemini = async (base64Image: string, type: 'food' | 'weight' | 'activity' | 'water', context?: string) => {
+// === Gemini AI 分析 (V10.0 截圖特化版) ===
+const analyzeWithGemini = async (base64Image: string, type: 'food' | 'combo' | 'activity', context?: string) => {
   try {
     const cleanBase64 = base64Image.split(',')[1];
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
     let promptText = "";
-    // 根據不同情境設定不同指令
+    
     if (type === 'food') {
-      promptText = "請辨識圖片食物。只回傳純 JSON：{ \"name\": \"食物名稱\", \"calories\": 數字(大卡) }。例如：{ \"name\": \"便當\", \"calories\": 800 }。無法辨識回傳 calories: 0";
-    } else if (type === 'weight') {
-      promptText = "請讀取圖片中體重計的數字。只回傳純 JSON：{ \"value\": 數字 }。例如看到 75.5kg，回傳 { \"value\": 75.5 }。";
+      promptText = "請辨識圖片中的食物。只回傳純 JSON：{ \"name\": \"食物名稱\", \"calories\": 數字(大卡) }。例如：{ \"name\": \"便當\", \"calories\": 800 }。若無法辨識回傳 calories: 0";
+    
+    } else if (type === 'combo') {
+      // 體重 + 喝水 二合一指令
+      promptText = "這是一張健康紀錄的截圖或照片。請同時尋找「體重(kg)」與「水量(ml)」。只回傳純 JSON：{ \"weight\": 數字或0, \"water\": 數字或0 }。例如看到體重計顯示 75.5，水杯約 300ml，回傳 { \"weight\": 75.5, \"water\": 300 }。若只看到其中一樣，另一樣回傳 0。";
+    
     } else if (type === 'activity') {
-      promptText = `請讀取圖片中儀表板或手錶的數據。目標是找出「${context}」的數值。只回傳純 JSON：{ \"value\": 數字 }。例如看到 5000步，回傳 { \"value\": 5000 }。`;
-    } else if (type === 'water') {
-      promptText = "請預估圖片中容器的水量(ml)。只回傳純 JSON：{ \"value\": 數字 }。例如看到一杯水，回傳 { \"value\": 300 }。";
+      // 走路或跑步
+      const actName = context === 'walk' ? '走路步數' : '跑步距離(公里)';
+      promptText = `請辨識圖片中關於「${actName}」的數值。只回傳純 JSON：{ \"value\": 數字 }。例如看到 5200步，回傳 { \"value\": 5200 }。看到 3.5公里，回傳 { \"value\": 3.5 }。`;
     }
 
     const payload = {
@@ -91,15 +95,15 @@ export default function HealthApp() {
   const [dietData, setDietData] = useState<Record<string, Record<string, string[]>>>({});
   const [foodLog, setFoodLog] = useState<Record<string, Record<string, {name: string, cal: number}[]>>>({});
   const [activityData, setActivityData] = useState<Record<string, Record<string, {target: number, actual: number}>>>({});
-  const [waterData, setWaterData] = useState<Record<string, number>>({}); // 喝水紀錄 { "2026-01-15": 1500 }
+  const [waterData, setWaterData] = useState<Record<string, number>>({}); 
 
   const [weightVal, setWeightVal] = useState('');
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 6)));
   
   // UI 狀態
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [scanType, setScanType] = useState<'food' | 'weight' | 'activity' | 'water'>('food'); // 記錄現在要掃什麼
-  const [scanContext, setScanContext] = useState<string>(''); // 記錄掃描的細節 (如: 'walk', 'run')
+  const [scanType, setScanType] = useState<'food' | 'combo' | 'activity'>('food');
+  const [scanContext, setScanContext] = useState<string>('');
   
   const [analyzing, setAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<{title: string, value: string} | null>(null);
@@ -158,8 +162,8 @@ export default function HealthApp() {
     return ticks;
   }, [chartData]);
 
-  // 通用相機觸發
-  const triggerCamera = (type: 'food' | 'weight' | 'activity' | 'water', context: string = '') => {
+  // 觸發上傳 (移除 capture 屬性，讓手機優先選檔案/相簿)
+  const triggerUpload = (type: 'food' | 'combo' | 'activity', context: string = '') => {
     setScanType(type);
     setScanContext(context);
     if (fileInputRef.current) fileInputRef.current.click();
@@ -184,7 +188,7 @@ export default function HealthApp() {
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
 
-          // === AI 分析核心邏輯 ===
+          // === AI 分析 ===
           const result = await analyzeWithGemini(compressedBase64, scanType, scanContext);
           setAnalyzing(false);
 
@@ -193,10 +197,10 @@ export default function HealthApp() {
              return;
           }
 
-          // 根據掃描類型處理結果
+          // === 依類型處理結果 ===
           if (scanType === 'food') {
-             // 飲食邏輯
-             const category = scanContext; // 這裡 context 存的是 '早餐' 等
+             // 飲食
+             const category = scanContext;
              setDietData(prev => {
                 const dayRecord = prev[todayKey] || {};
                 const list = dayRecord[category] || [];
@@ -211,29 +215,38 @@ export default function HealthApp() {
              }
              setAiResult({ title: result.name, value: `+${result.calories} kcal` });
           
-          } else if (scanType === 'weight') {
-             // 體重邏輯
-             const weight = parseFloat(result.value);
-             if (!isNaN(weight)) {
-                setWeightVal(weight.toString()); // 自動填入輸入框
-                setAiResult({ title: "體重計讀數", value: `${weight} kg` });
+          } else if (scanType === 'combo') {
+             // 體重 + 喝水 (二合一)
+             let msg = [];
+             
+             // 處理體重
+             const w = parseFloat(result.weight);
+             if (w > 0) {
+                 setWeightVal(w.toString()); // 自動填入輸入框
+                 msg.push(`體重: ${w}kg`);
+             }
+             
+             // 處理喝水
+             const vol = parseFloat(result.water);
+             if (vol > 0) {
+                 setWaterData(prev => ({ ...prev, [todayKey]: (prev[todayKey] || 0) + vol }));
+                 msg.push(`喝水: +${vol}ml`);
+             }
+
+             if (msg.length > 0) {
+                 setAiResult({ title: "二合一辨識成功", value: msg.join(" / ") });
+             } else {
+                 setAiResult({ title: "辨識結果", value: "未發現數值" });
              }
 
           } else if (scanType === 'activity') {
-             // 運動邏輯
+             // 走路或跑步
              const val = parseFloat(result.value);
              if (!isNaN(val)) {
-                const actId = scanContext; // context 存的是 'walk' 或 'run'
+                const actId = scanContext;
                 handleActivityChange(actId, 'actual', val.toString());
-                setAiResult({ title: "運動數據", value: `${val}` });
-             }
-
-          } else if (scanType === 'water') {
-             // 喝水邏輯
-             const vol = parseFloat(result.value);
-             if (!isNaN(vol)) {
-                setWaterData(prev => ({ ...prev, [todayKey]: (prev[todayKey] || 0) + vol }));
-                setAiResult({ title: "補充水分", value: `+${vol} ml` });
+                const unit = actId === 'walk' ? '步' : '公里';
+                setAiResult({ title: "運動數據更新", value: `${val} ${unit}` });
              }
           }
         };
@@ -323,7 +336,8 @@ export default function HealthApp() {
 
   return (
     <div className="min-h-screen bg-slate-100 pb-20 font-sans text-slate-900">
-      <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" capture="environment" />
+      {/* 隱藏的 input，移除 capture 以支援截圖上傳 */}
+      <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
       {/* Header */}
       <div className="bg-blue-600 text-white p-4 rounded-b-3xl shadow-lg mb-4 relative">
@@ -355,7 +369,7 @@ export default function HealthApp() {
           {analyzing ? (
             <>
               <Loader2 className="animate-spin text-blue-600" size={24} />
-              <span className="font-bold text-slate-700">AI 正在辨識中...</span>
+              <span className="font-bold text-slate-700">AI 正在判讀截圖...</span>
             </>
           ) : (
             <>
@@ -372,14 +386,17 @@ export default function HealthApp() {
 
       <div className="max-w-md mx-auto px-4 space-y-4">
         
-        {/* 體重圖表 (新增相機按鈕) */}
+        {/* 體重與喝水 (合併區塊) */}
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50">
+           {/* 日期切換 */}
            <div className="flex justify-between items-center mb-4 bg-slate-50 p-2 rounded-xl">
              <button onClick={() => shift(-7)} className="p-2 text-slate-500"><ChevronLeft size={20} /></button>
              <div className="flex items-center gap-2 text-sm font-bold text-slate-700"><Calendar size={16} className="text-blue-500"/> {chartData[0].name} ~ {chartData[6].name}</div>
              <button onClick={() => shift(7)} className="p-2 text-slate-500"><ChevronRight size={20} /></button>
           </div>
-          <div className="h-[150px] w-full">
+
+          {/* 圖表 */}
+          <div className="h-[150px] w-full mb-4">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
@@ -391,34 +408,29 @@ export default function HealthApp() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex gap-2 mt-4 items-center">
-            {/* 體重相機按鈕 */}
-            <button onClick={() => triggerCamera('weight')} className="p-2 bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-200">
-                <Camera size={24} />
+
+          {/* 喝水顯示 */}
+          <div className="flex items-center justify-between bg-blue-50 p-3 rounded-xl mb-4">
+             <div className="flex items-center gap-2 text-blue-600 font-bold">
+                 <Droplets size={20}/> 今日喝水
+             </div>
+             <span className="text-xl font-black text-blue-800">{waterIntake} <span className="text-sm font-normal">ml</span></span>
+          </div>
+
+          {/* 整合控制區 */}
+          <div className="flex gap-2 items-center">
+            {/* 體重+喝水 二合一上傳按鈕 */}
+            <button onClick={() => triggerUpload('combo')} className="flex items-center gap-1 px-3 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl shadow active:scale-95">
+                <ImageUp size={20} />
+                <span className="text-xs font-bold">上傳截圖</span>
             </button>
             <input type="number" step="0.1" value={weightVal} onChange={(e) => setWeightVal(e.target.value)} placeholder="輸入體重" className="flex-1 px-4 py-2 bg-white border border-slate-300 rounded-xl text-lg"/>
             <button onClick={addWeight} className="bg-blue-600 text-white px-4 rounded-xl shadow"><Plus size={24} /></button>
           </div>
+          <p className="text-xs text-slate-400 mt-2 text-center">💡 點擊「上傳截圖」可同時辨識體重與水量</p>
         </section>
 
-        {/* 喝水追蹤 (新增區塊) */}
-        <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <div className="bg-blue-100 p-2 rounded-full text-blue-500"><Droplets size={24} /></div>
-                <div>
-                    <h2 className="font-bold text-slate-700">今日喝水</h2>
-                    <p className="text-xs text-slate-400">目標 2000ml</p>
-                </div>
-            </div>
-            <div className="flex items-center gap-3">
-                <span className="text-2xl font-black text-blue-600">{waterIntake} <span className="text-sm font-normal text-slate-400">ml</span></span>
-                <button onClick={() => triggerCamera('water')} className="p-2 bg-blue-50 text-blue-500 rounded-full border border-blue-200 hover:bg-blue-100">
-                    <Camera size={20} />
-                </button>
-            </div>
-        </section>
-
-        {/* 一日活動表格 (新增相機按鈕) */}
+        {/* 一日活動表格 */}
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50">
             <div className="flex items-center gap-2 mb-4">
                 <Dumbbell className="text-green-600" size={20} />
@@ -441,9 +453,11 @@ export default function HealthApp() {
                                 <td className="p-2 border-r border-slate-300 font-bold text-slate-700">
                                     <div className="flex flex-col items-center gap-1">
                                         {act.name}
-                                        {/* 只有走路和跑步顯示相機 */}
+                                        {/* 只有走路和跑步顯示上傳按鈕 */}
                                         {act.allowScan && (
-                                            <button onClick={() => triggerCamera('activity', act.id)} className="text-blue-400 bg-blue-50 p-1 rounded hover:bg-blue-100"><Camera size={14}/></button>
+                                            <button onClick={() => triggerUpload('activity', act.id)} className="text-blue-500 bg-blue-50 p-1 rounded hover:bg-blue-100 flex items-center gap-1 text-[10px]">
+                                                <ImageUp size={12}/> 截圖
+                                            </button>
                                         )}
                                     </div>
                                 </td>
@@ -484,8 +498,9 @@ export default function HealthApp() {
                   </div>
                   <div className="flex gap-2 overflow-x-auto pb-2">
                     {currentPhotos.length < limit && (
-                      <button onClick={() => triggerCamera('food', category)} className="flex-shrink-0 w-20 h-20 border-2 border-dashed border-blue-300 rounded-lg flex flex-col items-center justify-center text-blue-400 bg-white active:bg-blue-50">
+                      <button onClick={() => triggerUpload('food', category)} className="flex-shrink-0 w-20 h-20 border-2 border-dashed border-blue-300 rounded-lg flex flex-col items-center justify-center text-blue-400 bg-white active:bg-blue-50">
                         <Camera size={24} />
+                        <span className="text-[10px]">上傳</span>
                       </button>
                     )}
                     {currentPhotos.map((photo, idx) => (
