@@ -8,7 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 // === 設定區 ===
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
 // 請確認這裡填入的是您剛剛新申請的那把有效金鑰
-const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
+const GEMINI_API_KEY = "AIzaSyA2mAXoESWIpCa9bcUPDDxud1QJFM2g8oI"; 
 const AI_MODEL = "gemini-2.5-flash"; 
 
 // === 雲端上傳 ===
