@@ -5,14 +5,18 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
-// === 設定區 ===
-// 您的 Google Apps Script 網址
+// === 設定區 (關鍵參數都在這裡) ===
+
+// 1. Google 雲端 Excel 連線網址
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
 
-// 您的 Gemini AI 金鑰
+// 2. Gemini AI 金鑰
 const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
 
-// 雲端上傳功能
+// 3. AI 模型型號 (如果還是報錯，可以手動改成 'gemini-pro')
+const AI_MODEL = "gemini-1.5-flash"; 
+
+// === 雲端上傳功能 ===
 const uploadToCloud = async (data: any) => {
   try {
     await fetch(GOOGLE_SCRIPT_URL, {
@@ -27,14 +31,14 @@ const uploadToCloud = async (data: any) => {
   }
 };
 
-// === Gemini AI 分析功能 (除錯版) ===
+// === Gemini AI 分析功能 (V2.0 穩定版) ===
 const analyzeWithGemini = async (base64Image: string) => {
   try {
     // 移除 Base64 的檔頭
     const cleanBase64 = base64Image.split(',')[1];
     
-    // 使用 gemini-1.5-flash 模型 (速度快、免費額度高)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    // 組合成正確的 API 網址
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
     const payload = {
       contents: [{
@@ -53,17 +57,16 @@ const analyzeWithGemini = async (base64Image: string) => {
 
     const data = await response.json();
 
-    // 🚨 這裡會抓出具體的錯誤訊息並顯示給您看
+    // 🚨 錯誤捕捉
     if (data.error) {
-      alert(`❌ AI 連線被拒絕：\n${data.error.message}\n(請截圖此畫面)`);
+      alert(`❌ AI 分析失敗 (${data.error.code})：\n${data.error.message}\n\n建議：請確認 API Key 是否啟用，或稍後再試。`);
       return `錯誤：${data.error.message}`;
     }
 
     const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!aiText) {
-      alert("⚠️ AI 回傳了空值 (可能是因為它看不懂這張照片)");
-      return "AI 無法辨識";
+      return "AI 無法辨識 (可能是非食物圖片)";
     }
 
     return aiText;
@@ -251,7 +254,7 @@ export default function HealthApp() {
           2026 健康管理 <Cloud size={16} className="opacity-80"/>
         </h1>
         <p className="text-xs opacity-90 flex items-center justify-center gap-1">
-          <BrainCircuit size={12}/> AI 營養師 (除錯模式)
+          <BrainCircuit size={12}/> AI 營養師 (連線中)
         </p>
         <button onClick={clearAll} className="absolute right-4 top-4 opacity-50 hover:opacity-100">
           <Trash2 size={18} />
@@ -264,7 +267,7 @@ export default function HealthApp() {
           {analyzing ? (
             <>
               <Loader2 className="animate-spin text-blue-600" size={24} />
-              <span className="font-bold text-slate-700">AI 正在診斷中...</span>
+              <span className="font-bold text-slate-700">AI 正在計算熱量...</span>
             </>
           ) : (
             <>
