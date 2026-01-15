@@ -6,8 +6,11 @@ import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils,
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 // === 設定區 ===
+// 您的 Google Apps Script 網址
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
-const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; // 您的 AI 金鑰
+
+// 您的 Gemini AI 金鑰
+const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
 
 // 雲端上傳功能
 const uploadToCloud = async (data: any) => {
@@ -24,12 +27,13 @@ const uploadToCloud = async (data: any) => {
   }
 };
 
-// Gemini AI 分析功能
+// === Gemini AI 分析功能 (除錯版) ===
 const analyzeWithGemini = async (base64Image: string) => {
   try {
-    // 移除 Base64 的檔頭，只留資料部分
+    // 移除 Base64 的檔頭
     const cleanBase64 = base64Image.split(',')[1];
     
+    // 使用 gemini-1.5-flash 模型 (速度快、免費額度高)
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
     
     const payload = {
@@ -48,11 +52,24 @@ const analyzeWithGemini = async (base64Image: string) => {
     });
 
     const data = await response.json();
+
+    // 🚨 這裡會抓出具體的錯誤訊息並顯示給您看
+    if (data.error) {
+      alert(`❌ AI 連線被拒絕：\n${data.error.message}\n(請截圖此畫面)`);
+      return `錯誤：${data.error.message}`;
+    }
+
     const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    return aiText || "AI 無法分析";
+    
+    if (!aiText) {
+      alert("⚠️ AI 回傳了空值 (可能是因為它看不懂這張照片)");
+      return "AI 無法辨識";
+    }
+
+    return aiText;
 
   } catch (error) {
-    console.error("AI Error:", error);
+    alert(`❌ 網路發生錯誤：\n${error}`);
     return "AI 連線失敗";
   }
 };
@@ -149,8 +166,8 @@ export default function HealthApp() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && currentCategory) {
-      setAnalyzing(true); // 開始分析
-      setAiResult(null);  // 清空舊結果
+      setAnalyzing(true); 
+      setAiResult(null);  
       
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -176,19 +193,19 @@ export default function HealthApp() {
             };
           });
 
-          // 2. 上傳照片連結/備份
+          // 2. 上傳備份
           uploadToCloud({
             date: todayKey,
             type: currentCategory,
             value: compressedBase64
           });
 
-          // 3. 呼叫 Gemini AI 分析熱量
+          // 3. AI 分析
           const aiAnalysis = await analyzeWithGemini(compressedBase64);
           setAnalyzing(false);
           setAiResult(aiAnalysis);
 
-          // 4. 將 AI 分析結果也存入雲端 Log
+          // 4. 上傳 AI 結果
           uploadToCloud({
             date: todayKey,
             type: `${currentCategory}-AI分析`,
@@ -234,20 +251,20 @@ export default function HealthApp() {
           2026 健康管理 <Cloud size={16} className="opacity-80"/>
         </h1>
         <p className="text-xs opacity-90 flex items-center justify-center gap-1">
-          <BrainCircuit size={12}/> AI 營養師待命中
+          <BrainCircuit size={12}/> AI 營養師 (除錯模式)
         </p>
         <button onClick={clearAll} className="absolute right-4 top-4 opacity-50 hover:opacity-100">
           <Trash2 size={18} />
         </button>
       </div>
 
-      {/* AI 分析提示框 (置頂顯示) */}
+      {/* AI 分析提示框 */}
       {(analyzing || aiResult) && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl border-2 border-blue-500 rounded-2xl p-4 w-[90%] max-w-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
           {analyzing ? (
             <>
               <Loader2 className="animate-spin text-blue-600" size={24} />
-              <span className="font-bold text-slate-700">AI 正在計算熱量中...</span>
+              <span className="font-bold text-slate-700">AI 正在診斷中...</span>
             </>
           ) : (
             <>
