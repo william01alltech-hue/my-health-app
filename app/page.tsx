@@ -2,12 +2,13 @@
 /* eslint-disable */
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2, Flame } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2, Flame, ClipboardList } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 // === 設定區 ===
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
-const GEMINI_API_KEY = "AIzaSyA2mAXoESWIpCa9bcUPDDxud1QJFM2g8oI"; 
+// 請確認這裡填入的是您剛剛新申請的那把有效金鑰
+const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
 const AI_MODEL = "gemini-2.5-flash"; 
 
 // === 雲端上傳 ===
@@ -25,13 +26,12 @@ const uploadToCloud = async (data: any) => {
   }
 };
 
-// === Gemini AI 分析 (進化版：回傳數字) ===
+// === Gemini AI 分析 ===
 const analyzeWithGemini = async (base64Image: string) => {
   try {
     const cleanBase64 = base64Image.split(',')[1];
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${AI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
-    // 關鍵修改：要求 AI 回傳 JSON 格式，方便我們抓數字
     const payload = {
       contents: [{
         parts: [
@@ -53,7 +53,6 @@ const analyzeWithGemini = async (base64Image: string) => {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) return { name: "無法辨識", calories: 0 };
 
-    // 清理並解析 JSON
     const cleanText = text.replace(/```json|```/g, '').trim();
     const result = JSON.parse(cleanText);
     return result;
@@ -65,15 +64,17 @@ const analyzeWithGemini = async (base64Image: string) => {
 };
 
 const MEAL_LIMITS: Record<string, number> = { '早餐': 3, '午餐': 3, '晚餐': 3, '其他': 10 };
+const CATEGORIES = ['早餐', '午餐', '晚餐', '其他'];
 
 export default function HealthApp() {
   const [isInitialized, setIsInitialized] = useState(false);
   
   // 資料狀態
   const [weightData, setWeightData] = useState<{date: string, weight: number}[]>([]); 
-  const [dietData, setDietData] = useState<Record<string, Record<string, string[]>>>({});
-  // 新增：卡路里紀錄 { "2026-01-15": { "早餐": 500, "午餐": 800 } }
-  const [calorieData, setCalorieData] = useState<Record<string, Record<string, number>>>({}); 
+  const [dietData, setDietData] = useState<Record<string, Record<string, string[]>>>({}); // 存照片
+  
+  // 新增：詳細食物紀錄 { "2026-01-15": { "早餐": [{name: "蛋餅", cal: 300}, ...] } }
+  const [foodLog, setFoodLog] = useState<Record<string, Record<string, {name: string, cal: number}[]>>>({});
 
   const [weightVal, setWeightVal] = useState('');
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 6)));
@@ -88,10 +89,11 @@ export default function HealthApp() {
   useEffect(() => {
     const savedWeight = localStorage.getItem('Health_Weight_Final');
     const savedDiet = localStorage.getItem('Health_Diet_Final');
-    const savedCals = localStorage.getItem('Health_Calories_Final');
+    const savedLog = localStorage.getItem('Health_FoodLog_V5'); // 使用新 Key 避免衝突
+    
     if (savedWeight) setWeightData(JSON.parse(savedWeight));
     if (savedDiet) setDietData(JSON.parse(savedDiet));
-    if (savedCals) setCalorieData(JSON.parse(savedCals));
+    if (savedLog) setFoodLog(JSON.parse(savedLog));
     setIsInitialized(true);
   }, []);
 
@@ -99,12 +101,13 @@ export default function HealthApp() {
     if (isInitialized) {
       localStorage.setItem('Health_Weight_Final', JSON.stringify(weightData));
       localStorage.setItem('Health_Diet_Final', JSON.stringify(dietData));
-      localStorage.setItem('Health_Calories_Final', JSON.stringify(calorieData));
+      localStorage.setItem('Health_FoodLog_V5', JSON.stringify(foodLog));
     }
-  }, [weightData, dietData, calorieData, isInitialized]);
+  }, [weightData, dietData, foodLog, isInitialized]);
 
-  // 日期與圖表邏輯
   const todayKey = new Date().toISOString().split('T')[0];
+
+  // 圖表資料
   const chartData = useMemo(() => {
     const result = [];
     for (let i = 0; i < 7; i++) {
@@ -130,7 +133,6 @@ export default function HealthApp() {
     return ticks;
   }, [chartData]);
 
-  // 操作功能
   const addWeight = () => {
     const v = parseFloat(weightVal);
     if (!isNaN(v) && v > 0) {
@@ -185,28 +187,24 @@ export default function HealthApp() {
             return { ...prev, [todayKey]: { ...dayRecord, [currentCategory]: [...categoryImages, compressedBase64] } };
           });
 
-          // 2. AI 分析 (取得 JSON)
+          // 2. AI 分析
           const result = await analyzeWithGemini(compressedBase64);
           setAnalyzing(false);
           setAiResult(result);
 
-          // 3. 累加卡路里
-          if (result.calories > 0) {
-            setCalorieData(prev => {
-              const dayCals = prev[todayKey] || {};
-              const currentCal = dayCals[currentCategory] || 0;
-              return { ...prev, [todayKey]: { ...dayCals, [currentCategory]: currentCal + result.calories } };
+          // 3. 存入詳細食物紀錄 (方便表格顯示)
+          if (result.calories >= 0) {
+            setFoodLog(prev => {
+                const dayLog = prev[todayKey] || {};
+                const catLog = dayLog[currentCategory] || [];
+                return {
+                    ...prev,
+                    [todayKey]: { ...dayLog, [currentCategory]: [...catLog, { name: result.name, cal: result.calories }] }
+                };
             });
           }
 
-          // 4. 上傳雲端 (紀錄文字結果)
-          uploadToCloud({
-            date: todayKey,
-            type: `${currentCategory}-AI`,
-            value: `${result.name} (${result.calories} kcal)`
-          });
-          
-          // 備份照片
+          uploadToCloud({ date: todayKey, type: `${currentCategory}-AI`, value: `${result.name} (${result.calories} kcal)` });
           uploadToCloud({ date: todayKey, type: currentCategory, value: compressedBase64 });
         };
         img.src = event.target?.result as string;
@@ -217,24 +215,58 @@ export default function HealthApp() {
   };
 
   const removePhoto = (category: string, index: number) => {
-    if(!confirm('刪除照片不會自動扣除卡路里，確定嗎？')) return;
+    if(!confirm('確定刪除這張照片與對應的熱量紀錄嗎？')) return;
+    
+    // 刪照片
     setDietData(prev => {
       const dayRecord = prev[todayKey];
       const newImages = [...dayRecord[category]];
       newImages.splice(index, 1);
       return { ...prev, [todayKey]: { ...dayRecord, [category]: newImages } };
     });
+
+    // 刪熱量紀錄 (同步索引)
+    setFoodLog(prev => {
+        const dayLog = prev[todayKey];
+        if(!dayLog || !dayLog[category]) return prev;
+        const newLog = [...dayLog[category]];
+        newLog.splice(index, 1);
+        return { ...prev, [todayKey]: { ...dayLog, [category]: newLog } };
+    });
   };
 
   const clearAll = () => {
     if(confirm('確定清空所有資料？')) {
-      setWeightData([]); setDietData({}); setCalorieData({});
+      setWeightData([]); setDietData({}); setFoodLog({});
     }
   };
 
-  // 計算今日總熱量
-  const todayCalories = calorieData[todayKey] || {};
-  const totalDailyCalories = Object.values(todayCalories).reduce((a, b) => a + b, 0);
+  // 計算表格資料
+  const getTableData = () => {
+    const log = foodLog[todayKey] || {};
+    const rows = [];
+    const totals = { '早餐': 0, '午餐': 0, '晚餐': 0, '其他': 0 };
+
+    // 產生 1~10 行
+    for (let i = 0; i < 10; i++) {
+        const rowData = {};
+        CATEGORIES.forEach(cat => {
+            const item = log[cat]?.[i];
+            if (item) {
+                rowData[cat] = item.cal;
+                totals[cat] += item.cal;
+            } else {
+                rowData[cat] = '';
+            }
+        });
+        rows.push({ index: i + 1, ...rowData });
+    }
+    
+    const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+    return { rows, totals, grandTotal };
+  };
+
+  const { rows, totals, grandTotal } = getTableData();
 
   if (!isInitialized) return <div className="p-10 text-center">Loading...</div>;
 
@@ -247,19 +279,18 @@ export default function HealthApp() {
         <h1 className="text-lg font-bold flex items-center justify-center gap-2">
           2026 健康管理 <Cloud size={16} className="opacity-80"/>
         </h1>
-        {/* 今日總熱量大儀表板 */}
         <div className="mt-4 text-center">
           <p className="text-blue-100 text-sm mb-1">今日總攝取</p>
           <div className="text-4xl font-black flex items-center justify-center gap-2">
             <Flame className="text-orange-400 fill-orange-400" size={32} />
-            {totalDailyCalories} 
+            {grandTotal} 
             <span className="text-lg font-normal opacity-80">kcal</span>
           </div>
         </div>
         <button onClick={clearAll} className="absolute right-4 top-4 opacity-50 hover:opacity-100"><Trash2 size={18}/></button>
       </div>
 
-      {/* AI 分析彈窗 */}
+      {/* AI 彈窗 */}
       {(analyzing || aiResult) && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-white shadow-2xl border-2 border-blue-500 rounded-2xl p-4 w-[90%] max-w-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
           {analyzing ? (
@@ -281,7 +312,7 @@ export default function HealthApp() {
       )}
 
       <div className="max-w-md mx-auto px-4 space-y-4">
-        {/* 體重區塊 */}
+        {/* 體重圖表 */}
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50">
            <div className="flex justify-between items-center mb-4 bg-slate-50 p-2 rounded-xl">
             <button onClick={() => shift(-7)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500"><ChevronLeft size={20} /></button>
@@ -309,35 +340,26 @@ export default function HealthApp() {
           </div>
         </section>
 
-        {/* 飲食區塊 (含卡路里計算) */}
+        {/* 飲食照片列表 */}
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50">
           <div className="flex items-center gap-2 mb-4">
             <Utensils className="text-blue-600" size={20} />
-            <h2 className="font-bold text-slate-700">今日飲食紀錄</h2>
+            <h2 className="font-bold text-slate-700">飲食照片</h2>
           </div>
           <div className="grid grid-cols-1 gap-4">
-            {Object.keys(MEAL_LIMITS).map((category) => {
+            {CATEGORIES.map((category) => {
               const currentPhotos = dietData[todayKey]?.[category] || [];
-              const currentCals = calorieData[todayKey]?.[category] || 0; // 該餐總熱量
               const limit = MEAL_LIMITS[category];
-              
               return (
                 <div key={category} className="border border-slate-100 rounded-xl p-3 bg-slate-50">
                   <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-700">{category}</span>
-                      {/* 單餐熱量顯示 */}
-                      <span className="bg-orange-100 text-orange-600 text-xs px-2 py-0.5 rounded-full font-bold">
-                         {currentCals} kcal
-                      </span>
-                    </div>
-                    <span className="text-xs text-slate-400">{currentPhotos.length}/{limit}</span>
+                     <span className="font-bold text-slate-700">{category}</span>
+                     <span className="text-xs text-slate-400">{currentPhotos.length}/{limit}</span>
                   </div>
                   <div className="flex gap-2 overflow-x-auto pb-2">
                     {currentPhotos.length < limit && (
                       <button onClick={() => handleCameraClick(category)} className="flex-shrink-0 w-20 h-20 border-2 border-dashed border-blue-300 rounded-lg flex flex-col items-center justify-center text-blue-400 bg-white active:bg-blue-50">
                         <Camera size={24} />
-                        <span className="text-[10px] mt-1">AI 掃描</span>
                       </button>
                     )}
                     {currentPhotos.map((photo, idx) => (
@@ -352,6 +374,62 @@ export default function HealthApp() {
             })}
           </div>
         </section>
+
+        {/* 🆕 卡路里計算總表 (復刻您圖片中的表格) */}
+        <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50 mb-8">
+            <div className="flex items-center gap-2 mb-4">
+                <ClipboardList className="text-blue-600" size={20} />
+                <h2 className="font-bold text-slate-700">卡路里計算 ({todayKey})</h2>
+            </div>
+            
+            <div className="overflow-x-auto rounded-lg border border-slate-300">
+                <table className="w-full text-center text-sm border-collapse">
+                    <thead>
+                        <tr className="bg-slate-100 border-b border-slate-300">
+                            <th className="p-2 border-r border-slate-300 w-10">#</th>
+                            {CATEGORIES.map(c => (
+                                <th key={c} className="p-2 border-r border-slate-300 min-w-[60px]">{c}</th>
+                            ))}
+                        </tr>
+                        <tr className="bg-slate-50 border-b border-slate-300 text-xs text-slate-500">
+                            <th className="p-1 border-r border-slate-300"></th>
+                            {CATEGORIES.map(c => (
+                                <th key={c} className="p-1 border-r border-slate-300">卡路里</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row) => (
+                            <tr key={row.index} className="border-b border-slate-200 hover:bg-slate-50">
+                                <td className="p-2 border-r border-slate-300 font-mono text-slate-400">{row.index}</td>
+                                {CATEGORIES.map(cat => (
+                                    <td key={cat} className="p-2 border-r border-slate-300 text-slate-700 font-medium">
+                                        {row[cat]}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                        {/* 合計 Row */}
+                        <tr className="bg-blue-50 border-b border-slate-300 font-bold text-blue-800">
+                            <td className="p-2 border-r border-slate-300">合計</td>
+                            {CATEGORIES.map(cat => (
+                                <td key={cat} className="p-2 border-r border-slate-300">
+                                    {totals[cat] > 0 ? totals[cat] : ''}
+                                </td>
+                            ))}
+                        </tr>
+                        {/* 總計 Row */}
+                        <tr className="bg-blue-600 text-white font-bold">
+                            <td className="p-2 border-r border-blue-500">總計</td>
+                            <td colSpan={4} className="p-2 text-center text-lg">
+                                {grandTotal} kcal
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
       </div>
     </div>
   );
