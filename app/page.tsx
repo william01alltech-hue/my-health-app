@@ -8,8 +8,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 // === 設定區 ===
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
 
-// ⚠️⚠️⚠️ 請在此填入您的新 API 金鑰 (不要留空，也不要用舊的) ⚠️⚠️⚠️
-const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
+// ⚠️⚠️⚠️【重要】請在此填入您剛剛申請的新 API 金鑰 (開頭是 AIzaSy...) ⚠️⚠️⚠️
+const GEMINI_API_KEY = "AIzaSyA0_eNpZC6Ujvmbs6GJAg_HV8jaJp6o6uU"; 
 const AI_MODEL = "gemini-2.5-flash"; 
 
 // === 運動消耗標準 (每單位消耗卡路里) ===
@@ -83,7 +83,7 @@ export default function HealthApp() {
   const [dietData, setDietData] = useState<Record<string, Record<string, string[]>>>({});
   const [foodLog, setFoodLog] = useState<Record<string, Record<string, {name: string, cal: number}[]>>>({});
   
-  // 新增：運動紀錄 { "2026-01-15": { walk: {target: 6000, actual: 5000}, ... } }
+  // 運動紀錄
   const [activityData, setActivityData] = useState<Record<string, Record<string, {target: number, actual: number}>>>({});
 
   const [weightVal, setWeightVal] = useState('');
@@ -390,7 +390,7 @@ export default function HealthApp() {
           </div>
         </section>
 
-        {/* 🆕 一日活動表格 (可輸入) */}
+        {/* 一日活動表格 (可輸入) */}
         <section className="bg-white p-4 rounded-2xl shadow-sm border border-blue-50">
             <div className="flex items-center gap-2 mb-4">
                 <Dumbbell className="text-green-600" size={20} />
