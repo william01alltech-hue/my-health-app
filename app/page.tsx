@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
-// === 設定區 (關鍵參數都在這裡) ===
+// === 設定區 ===
 
 // 1. Google 雲端 Excel 連線網址
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
@@ -13,8 +13,8 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3
 // 2. Gemini AI 金鑰
 const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
 
-// 3. AI 模型型號 (如果還是報錯，可以手動改成 'gemini-pro')
-const AI_MODEL = "gemini-1.5-flash"; 
+// 3. AI 模型型號 (改用 Pro 版，相容性最高)
+const AI_MODEL = "gemini-1.5-pro"; 
 
 // === 雲端上傳功能 ===
 const uploadToCloud = async (data: any) => {
@@ -31,7 +31,7 @@ const uploadToCloud = async (data: any) => {
   }
 };
 
-// === Gemini AI 分析功能 (V2.0 穩定版) ===
+// === Gemini AI 分析功能 (V3.0 Pro版) ===
 const analyzeWithGemini = async (base64Image: string) => {
   try {
     // 移除 Base64 的檔頭
@@ -59,7 +59,7 @@ const analyzeWithGemini = async (base64Image: string) => {
 
     // 🚨 錯誤捕捉
     if (data.error) {
-      alert(`❌ AI 分析失敗 (${data.error.code})：\n${data.error.message}\n\n建議：請確認 API Key 是否啟用，或稍後再試。`);
+      alert(`❌ AI 分析失敗 (${data.error.code})：\n${data.error.message}\n\n請截圖此畫面給工程師。`);
       return `錯誤：${data.error.message}`;
     }
 
@@ -254,7 +254,7 @@ export default function HealthApp() {
           2026 健康管理 <Cloud size={16} className="opacity-80"/>
         </h1>
         <p className="text-xs opacity-90 flex items-center justify-center gap-1">
-          <BrainCircuit size={12}/> AI 營養師 (連線中)
+          <BrainCircuit size={12}/> AI 營養師 (Pro版)
         </p>
         <button onClick={clearAll} className="absolute right-4 top-4 opacity-50 hover:opacity-100">
           <Trash2 size={18} />
@@ -267,7 +267,7 @@ export default function HealthApp() {
           {analyzing ? (
             <>
               <Loader2 className="animate-spin text-blue-600" size={24} />
-              <span className="font-bold text-slate-700">AI 正在計算熱量...</span>
+              <span className="font-bold text-slate-700">AI 正在深度分析...</span>
             </>
           ) : (
             <>
