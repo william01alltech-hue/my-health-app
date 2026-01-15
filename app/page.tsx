@@ -9,7 +9,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
 
 // ⚠️⚠️⚠️ 請在此填入您的新 API 金鑰 (不要留空，也不要用舊的) ⚠️⚠️⚠️
-const GEMINI_API_KEY = "AIzaSyA0_eNpZC6Ujvmbs6GJAg_HV8jaJp6o6uU"; 
+const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; 
 const AI_MODEL = "gemini-2.5-flash"; 
 
 // === 運動消耗標準 (每單位消耗卡路里) ===
