@@ -9,7 +9,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
 
 // ⚠️⚠️⚠️【重要】已填入您的新 API 金鑰 ⚠️⚠️⚠️
-const GEMINI_API_KEY = "AIzaSyA0_eNpZC6Ujvmbs6GJAg_HV8jaJp6o6uU"; 
+const GEMINI_API_KEY = "AIzaSyCOdlPAEPhbAllN4_E3qhyL0RFUhK8u_Xo"; 
 const AI_MODEL = "gemini-2.5-flash"; 
 
 // === 運動消耗標準 ===
