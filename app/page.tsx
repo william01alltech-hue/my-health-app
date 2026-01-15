@@ -2,25 +2,58 @@
 /* eslint-disable */
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Calendar, Trash2, Camera, X, Utensils, Cloud, BrainCircuit, Loader2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
-// === 您的專屬雲端網址 (已自動填入) ===
-const API_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
+// === 設定區 ===
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzClBk-cmKDI3cgp1jshvUVo-1mkgq6unU39FeCA6wyqkjTjvMbSVIcRXrUA5MLzYcV/exec";
+const GEMINI_API_KEY = "AIzaSyChNbDhHMShbTIrJZC2zshvIUdhvp7RAf0"; // 您的 AI 金鑰
 
-// 雲端上傳功能 (Fire & Forget 模式)
+// 雲端上傳功能
 const uploadToCloud = async (data: any) => {
   try {
-    // 使用 no-cors 模式避開跨域檢查，確保資料能送出
-    await fetch(API_URL, {
+    await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
-      mode: 'no-cors', 
+      mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
     console.log("已發送至雲端:", data.type);
   } catch (err) {
     console.error("雲端備份失敗:", err);
+  }
+};
+
+// Gemini AI 分析功能
+const analyzeWithGemini = async (base64Image: string) => {
+  try {
+    // 移除 Base64 的檔頭，只留資料部分
+    const cleanBase64 = base64Image.split(',')[1];
+    
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    
+    const payload = {
+      contents: [{
+        parts: [
+          { text: "請辨識這張圖片中的食物，並預估總熱量。請用繁體中文簡短回答，格式範例：'炸雞腿便當 (約 850 大卡)'。如果不是食物，請回傳 '無法辨識'。" },
+          { inline_data: { mime_type: "image/jpeg", data: cleanBase64 } }
+        ]
+      }]
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return aiText || "AI 無法分析";
+
+  } catch (error) {
+    console.error("AI Error:", error);
+    return "AI 連線失敗";
   }
 };
 
@@ -36,6 +69,10 @@ export default function HealthApp() {
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 6)));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [currentCategory, setCurrentCategory] = useState<string | null>(null);
+  
+  // AI 狀態顯示
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiResult, setAiResult] = useState<string | null>(null);
 
   useEffect(() => {
     const savedWeight = localStorage.getItem('Health_Weight_Final');
@@ -52,26 +89,16 @@ export default function HealthApp() {
     }
   }, [weightData, dietData, isInitialized]);
 
-  // --- 體重邏輯 (新增雲端備份) ---
   const addWeight = () => {
     const v = parseFloat(weightVal);
     if (!isNaN(v) && v > 0) {
       const now = new Date();
       const dateKey = now.toISOString().split('T')[0];
-      
-      // 1. 本地儲存
       setWeightData(prev => {
         const clean = prev.filter(r => r.date !== dateKey);
         return [...clean, { date: dateKey, weight: v }];
       });
-      
-      // 2. 雲端備份
-      uploadToCloud({
-        date: dateKey,
-        type: '體重',
-        value: v.toString()
-      });
-
+      uploadToCloud({ date: dateKey, type: '體重', value: v.toString() });
       setWeightVal('');
     }
   };
@@ -107,7 +134,6 @@ export default function HealthApp() {
     setStartDate(newDate);
   };
 
-  // --- 飲食照片邏輯 (新增雲端備份) ---
   const todayKey = new Date().toISOString().split('T')[0];
 
   const handleCameraClick = (category: string) => {
@@ -123,10 +149,13 @@ export default function HealthApp() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && currentCategory) {
+      setAnalyzing(true); // 開始分析
+      setAiResult(null);  // 清空舊結果
+      
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
-        img.onload = () => {
+        img.onload = async () => {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           const maxWidth = 800;
@@ -135,26 +164,35 @@ export default function HealthApp() {
           canvas.height = img.height * scale;
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
           
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6); // 稍微調低品質以利傳輸
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
 
-          // 1. 本地儲存
+          // 1. 更新畫面
           setDietData(prev => {
             const dayRecord = prev[todayKey] || {};
             const categoryImages = dayRecord[currentCategory] || [];
             return {
               ...prev,
-              [todayKey]: {
-                ...dayRecord,
-                [currentCategory]: [...categoryImages, compressedBase64]
-              }
+              [todayKey]: { ...dayRecord, [currentCategory]: [...categoryImages, compressedBase64] }
             };
           });
 
-          // 2. 雲端備份 (只傳類別與照片字串)
+          // 2. 上傳照片連結/備份
           uploadToCloud({
             date: todayKey,
-            type: currentCategory, // 例如: "早餐"
+            type: currentCategory,
             value: compressedBase64
+          });
+
+          // 3. 呼叫 Gemini AI 分析熱量
+          const aiAnalysis = await analyzeWithGemini(compressedBase64);
+          setAnalyzing(false);
+          setAiResult(aiAnalysis);
+
+          // 4. 將 AI 分析結果也存入雲端 Log
+          uploadToCloud({
+            date: todayKey,
+            type: `${currentCategory}-AI分析`,
+            value: aiAnalysis
           });
         };
         img.src = event.target?.result as string;
@@ -190,15 +228,39 @@ export default function HealthApp() {
     <div className="min-h-screen bg-slate-100 pb-20 font-sans text-slate-900">
       <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" capture="environment" />
 
+      {/* 頂部導航 */}
       <div className="bg-blue-600 text-white p-4 rounded-b-3xl shadow-lg mb-4 text-center relative">
         <h1 className="text-lg font-bold flex items-center justify-center gap-2">
           2026 健康管理 <Cloud size={16} className="opacity-80"/>
         </h1>
-        <p className="text-xs opacity-90">自動雲端備份啟用中</p>
+        <p className="text-xs opacity-90 flex items-center justify-center gap-1">
+          <BrainCircuit size={12}/> AI 營養師待命中
+        </p>
         <button onClick={clearAll} className="absolute right-4 top-4 opacity-50 hover:opacity-100">
           <Trash2 size={18} />
         </button>
       </div>
+
+      {/* AI 分析提示框 (置頂顯示) */}
+      {(analyzing || aiResult) && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl border-2 border-blue-500 rounded-2xl p-4 w-[90%] max-w-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+          {analyzing ? (
+            <>
+              <Loader2 className="animate-spin text-blue-600" size={24} />
+              <span className="font-bold text-slate-700">AI 正在計算熱量中...</span>
+            </>
+          ) : (
+            <>
+              <BrainCircuit className="text-purple-600 flex-shrink-0" size={24} />
+              <div className="flex-1">
+                <p className="font-bold text-slate-800 text-sm">AI 分析結果：</p>
+                <p className="text-blue-700 font-medium text-lg">{aiResult}</p>
+              </div>
+              <button onClick={() => setAiResult(null)} className="bg-slate-100 p-1 rounded-full"><X size={16}/></button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="max-w-md mx-auto px-4 space-y-4">
         {/* 體重區塊 */}
@@ -250,7 +312,7 @@ export default function HealthApp() {
                     {!isFull && (
                       <button onClick={() => handleCameraClick(category)} className="flex-shrink-0 w-20 h-20 border-2 border-dashed border-blue-300 rounded-lg flex flex-col items-center justify-center text-blue-400 bg-white active:bg-blue-50 transition-colors">
                         <Camera size={24} />
-                        <span className="text-[10px] mt-1">新增</span>
+                        <span className="text-[10px] mt-1">AI 辨識</span>
                       </button>
                     )}
                     {currentPhotos.map((photo, idx) => (
